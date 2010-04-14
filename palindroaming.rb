@@ -100,8 +100,7 @@ OPT.pmod = OPT.pmod.let do |slf|
     krev = k.reverse
     if slf.has_key?(krev) then
       [k, krev].each do |seq|
-        h[seq] ||= 1
-        h[seq] *= v
+        h[seq] = slf[k] * slf[krev]
       end
     end
   end
