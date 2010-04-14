@@ -8,9 +8,8 @@ END
 require 'optparse'
 
 OPT = Struct.
-  new(:verbose, :pmod,        :wmod,       :seed, :length).
-  new(false,    'phone.pmod', 'word.wmod', 0,     5)
-ORDER = 2
+  new(:verbose, :pmod,        :wmod,       :seed, :length, :order).
+  new(false,    'phone.pmod', 'word.wmod', 0,     5,       2)
 
 OptionParser.new do |opts|
   opts.on('--seed SEED', Integer) do |v|
@@ -28,6 +27,9 @@ OptionParser.new do |opts|
   opts.on('--length N', Integer) do |v|
     OPT.length = v
   end
+  opts.on('--order N', Integer) do |v|
+    OPT.order = v
+  end
   opts.on('--verbose') do
     OPT.verbose = true
   end
@@ -44,11 +46,11 @@ class Hash
       end
     end
   end
-  def degenerate
+  def degenerate(len)
     n = {}
     self.each_pair do |k,v|
-      n[k[0]] ||= {}
-      n[k[0]][k[1..-1]] = v
+      n[k[0,len]] ||= {}
+      n[k[0,len]][k[len..-1]] = v
     end
     return n
   end
@@ -76,7 +78,7 @@ OPT.pmod = OPT.pmod.let do |slf|
     io.each_line do |line|
       a = line.split(/\s+/)
       val = a.shift
-      h[a] = val.to_i
+      h[a[0..OPT.order]] = val.to_i
       sum += h[a]
     end
   end
@@ -89,9 +91,6 @@ uniphones = OPT.pmod.let do |slf|
     h[k[0]] += v
   end
   h
-end.let do |slf|
-  u = slf.clone
-  slf[''] = u
 end
 
 # average with probability of reversed sequence
@@ -124,32 +123,52 @@ else
   end
 end
 
-degenerated = OPT.pmod.degenerate
+degenerateds = (0..OPT.order-1).map do |i|
+  OPT.pmod.degenerate(OPT.order - i)
+end
+
+# degenerateds.each_with_index do |d,i|
+#   print i.to_s + ' '
+#   puts '   ' + d.keys.map{|x| x.join}.sort.join(' ')
+# end
 
 srand(OPT.seed)
 
 while true do
-  cand = if OPT.length % 2 == 0 then
-           OPT.pmod.select_hash{|k,_| k[0] == k[1]}.roulette
-         else
-           [uniphones.roulette]
-         end
+
+  cand = []
+  while true
+    # generate the core (length == 1 or 2)
+    cand = if OPT.length % 2 == 0 then
+             OPT.pmod.select_hash{|k,_| k[0] == k[1]}.roulette
+           else
+             [uniphones.roulette]
+           end
+    # append to the core (length / 2 >= order - 1)
+    x = degenerateds[OPT.order-1][[cand[0]]]
+    if x then
+      x = x.roulette[0..OPT.order-1]
+      cand = x.reverse + cand + x
+      break
+    end
+  end
+  
+  # keep appending to the core
   while true do
-    # STDERR.print cand[0]
-    # STDERR.puts degenerated.values.inject(0){|s,x| s+=x.size}
-    # STDERR.puts cand[0], degenerated[cand[0]]
-    # STDERR.puts "#{degenerated[cand[0]].size}"
-    nexts = degenerated[cand[0]]
+    nexts = degenerateds[1][cand[0,OPT.order-1].reverse]
+    p [cand[0,OPT.order-1].reverse, nexts] if OPT.verbose
     if nexts then
       r = nexts.roulette
-      cand = r + cand + r
-      if cand.length == OPT.length then
+      cand = r.reverse + cand + r
+      if cand.length >= OPT.length then
+        d = (cand.length - OPT.length) / 2
+        cand = cand[d..cand.length-d-1]
         puts cand.join(' ')
         break
       end
     else
-      cand = cand[1..cand.length-2]
-      if !cand then
+      cand = cand[OPT.order-1..cand.length-1-OPT.order-1]
+      if !cand or cand.length == 0 then
         break
       end
     end
