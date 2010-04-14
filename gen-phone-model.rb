@@ -43,12 +43,14 @@ PHONES = Regexp.new '^('+DATA.read.split(/\s+/).join('|')+')'
 
 counts = Hash.new{|h,k| h[k] = 0} # TODO: use trie
 ret = Open3.popen3("mecab -Oyomi") do |stdin, stdout, stderr|
-  ARGF.each_with_index do |line,i|
-    stdin.puts line
-    stdin.flush if i % 100 == 0
+  Thread.start do
+    ARGF.each_with_index do |line,i|
+      stdin.puts line
+      stdin.flush if i % 100 == 0
+    end
+    stdin.flush
+    stdin.close
   end
-  stdin.flush
-  stdin.close
   stdout.each_line do |line|
     line.each_phone_sequence do |seq|
       seq.each_cons(OPT.order) do |ngram|
@@ -56,6 +58,8 @@ ret = Open3.popen3("mecab -Oyomi") do |stdin, stdout, stderr|
       end
     end
   end
+  stdout.close
+  stderr.close
 end
 
 counts.keys.sort_by{|k| -counts[k]}.each do |k|
